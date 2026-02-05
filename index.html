@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor TASA Pro - Datos Completos</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        #map { height: 100vh; width: 100vw; background: #001529; }
+        
+        .selector-panel {
+            position: absolute; top: 15px; right: 15px; z-index: 1000;
+            background: white; padding: 15px; border-radius: 8px; width: 280px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        /* Etiquetas rojas sobre los barcos */
+        .ship-label {
+            background: none !important; border: none !important; box-shadow: none !important;
+            color: #d32f2f; font-weight: bold; font-size: 11px;
+            text-shadow: 1px 1px 1px #fff; white-space: nowrap;
+        }
+
+        .popup-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 5px; }
+        .popup-table td { border-bottom: 1px solid #eee; padding: 3px 0; }
+        .popup-table b { color: #004488; }
+    </style>
+</head>
+<body>
+
+    <div class="selector-panel">
+        <label style="font-weight: bold; color: #004488;">SEGUIMIENTO EN VIVO</label>
+        <select id="shipSelector" style="width:100%; margin:10px 0; padding:8px; font-weight:bold; border: 2px solid #004488; border-radius:5px;">
+            <option value="all">-- Ver todos --</option>
+        </select>
+        <div id="debug" style="font-size:11px; color:#666; font-weight:bold;">Cargando objetivos...</div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const SUPABASE_URL = 'https://lnxziegzyilfnibmfrtz.supabase.co'; 
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxueHppZWd6eWlsZm5pYm1mcnR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwMjI1OTQsImV4cCI6MjA4NDU5ODU5NH0.ltom27lQCmTyI-3NfPW6tMWpEMOL6fXh2dc8ksx0DsQ';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const map = L.map('map', { zoomControl: true }).setView([-11.96, -77.14], 14); 
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        const markers = {}; 
+        let currentFocus = "all";
+
+        function updateMarker(data, type) {
+            const lat = parseFloat(data.lat || data.latitude);
+            const lon = parseFloat(data.lon || data.longitude);
+            if (isNaN(lat) || isNaN(lon)) return;
+
+            // --- LÓGICA DE PRIORIDAD DE NOMBRE ---
+            // 1. ship_name, 2. ship_id (remolcador), 3. mmsi, 4. "Desconocido"
+            const displayName = (data.ship_name || data.ship_id || data.mmsi || "S/N").toString().toUpperCase();
+            const id = data.mmsi || data.ship_id || data.id;
+
+            const color = (type === 'propio') ? '#ff3300' : '#0000ff';
+            const heading = parseFloat(data.cog || data.rumbo || 0);
+
+            // --- CONSTRUCCIÓN DEL POPUP (Todos los datos) ---
+            let details = `<div style="min-width:200px"><h3 style="margin:0; color:${color};">${displayName}</h3><table class="popup-table">`;
+            
+            // Añadir dinámicamente cada dato si existe en el objeto
+            Object.entries(data).forEach(([key, value]) => {
+                if(value !== null && value !== undefined && key !== 'geom') {
+                    details += `<tr><td><b>${key}:</b></td><td>${value}</td></tr>`;
+                }
+            });
+            details += `</table></div>`;
+
+            if (!markers[id]) {
+                const icon = L.divIcon({
+                    className: 'ship-icon',
+                    html: `<div style="transform: rotate(${heading}deg); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 18px solid ${color}; filter: drop-shadow(1px 1px 1px black);"></div>`,
+                    iconSize: [18, 18], iconAnchor: [9, 9]
+                });
+
+                markers[id] = L.marker([lat, lon], { icon: icon }).addTo(map);
+                
+                // Etiqueta permanente (Nombre o MMSI)
+                markers[id].bindTooltip(displayName, { permanent: true, direction: 'top', className: 'ship-label', offset: [0, -10] });
+                
+                // Cuadro de datos al hacer click
+                markers[id].bindPopup(details);
+
+                if (type === 'propio') {
+                    const opt = new Option(`🚢 ${displayName}`, id);
+                    document.getElementById('shipSelector').add(opt);
+                }
+            } else {
+                markers[id].setLatLng([lat, lon]);
+                markers[id].getPopup().setContent(details);
+                markers[id].setTooltipContent(displayName);
+                
+                // Actualizar rotación del icono
+                markers[id].setIcon(L.divIcon({
+                    className: 'ship-icon',
+                    html: `<div style="transform: rotate(${heading}deg); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 18px solid ${color}; filter: drop-shadow(1px 1px 1px black);"></div>`,
+                    iconSize: [18, 18], iconAnchor: [9, 9]
+                }));
+            }
+
+            if (currentFocus == id) map.panTo([lat, lon]);
+        }
+
+        async function init() {
+            const { data: n } = await supabaseClient.from('nmea_logs').select('*').order('date_event', {ascending:false}).limit(10);
+            const { data: a } = await supabaseClient.from('ais_live').select('*').order('last_seen', {ascending:false}).limit(150);
+
+            if (n) n.forEach(x => updateMarker(x, 'propio'));
+            if (a) a.forEach(x => updateMarker(x, 'ais'));
+
+            document.getElementById('debug').innerText = `Objetivos: ${Object.keys(markers).length} (Sync OK)`;
+
+            // Canales Realtime
+            supabaseClient.channel('vts').on('postgres_changes',{event:'INSERT',schema:'public',table:'nmea_logs'},p=>updateMarker(p.new,'propio')).subscribe();
+            supabaseClient.channel('ais').on('postgres_changes',{event:'INSERT',schema:'public',table:'ais_live'},p=>updateMarker(p.new,'ais')).subscribe();
+        }
+
+        document.getElementById('shipSelector').onchange = (e) => {
+            currentFocus = e.target.value;
+            if(currentFocus !== "all" && markers[currentFocus]) {
+                map.flyTo(markers[currentFocus].getLatLng(), 16);
+            }
+        };
+
+        init();
+    </script>
+</body>
+</html>
