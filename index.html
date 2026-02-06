@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>VTS TASA - Professional Monitor</title>
+    <title>Monitor Remolcadores - Por HDelacruz</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.css" />
     <style>
@@ -16,7 +16,7 @@
         body, html { margin: 0; padding: 0; height: 100%; background: #0b0e11; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #map { height: 100vh; width: 100vw; background: #001529; }
 
-        /* Sidebar estilo TimeZero */
+        /* Sidebar Estilo Nobeltec */
         .tz-sidebar {
             position: absolute; left: 15px; top: 15px; z-index: 1000;
             display: flex; flex-direction: column; gap: 8px;
@@ -26,14 +26,14 @@
             width: 44px; height: 44px; background: var(--tz-bg);
             border: 1px solid var(--tz-border); border-radius: 4px;
             color: white; cursor: pointer; display: flex; align-items: center;
-            justify-content: center; font-weight: bold; font-size: 14px;
+            justify-content: center; font-weight: bold; font-size: 13px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s;
-            text-align: center; line-height: 1;
         }
 
         .tz-btn:hover { border-color: var(--tz-accent); background: #1c252e; }
         .tz-btn.active { color: var(--tz-accent); border-color: var(--tz-accent); box-shadow: 0 0 8px var(--tz-accent); }
 
+        /* Panel de Control */
         .selector-panel {
             position: absolute; top: 15px; right: 15px; z-index: 1000;
             background: rgba(20, 25, 30, 0.95); padding: 15px; border-radius: 4px; 
@@ -56,7 +56,6 @@
         .vessel-info-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 5px; }
         .vessel-info-table td { padding: 3px 0; border-bottom: 1px solid #2c3e50; }
 
-        /* Ocultar elementos nativos de Leaflet que no queremos */
         .leaflet-control-zoom, .leaflet-control-layers, .polyline-measure-unicode-icon { display: none !important; }
     </style>
 </head>
@@ -69,15 +68,15 @@
         <div style="height: 10px; border-bottom: 1px solid var(--tz-border); margin-bottom: 5px;"></div>
         <button class="tz-btn" onclick="map.zoomIn()">+</button>
         <button class="tz-btn" onclick="map.zoomOut()">-</button>
-        <button class="tz-btn" id="btn-ruler" title="Regla de Medición" onclick="toggleRuler()">📏</button>
+        <button class="tz-btn" id="btn-ruler" onclick="toggleRuler()">📏</button>
     </div>
 
     <div class="selector-panel">
-        <div style="font-weight: bold; font-size: 13px; letter-spacing: 1px; color: var(--tz-accent);">VTS MONITOR TASA</div>
+        <div style="font-weight: bold; font-size: 12px; color: var(--tz-accent);">MONITOR REMOLCADORES&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; SELECCIONAR REMOLCADOR</div>
         <select id="shipSelector">
             <option value="all">-- VISTA GENERAL --</option>
         </select>
-        <div id="stats" style="font-size:10px; opacity: 0.8;">Iniciando radar...</div>
+        <div id="stats" style="font-size:10px; opacity: 0.8;">Sincronizando...</div>
     </div>
 
     <div id="map"></div>
@@ -91,36 +90,20 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxueHppZWd6eWlsZm5pYm1mcnR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwMjI1OTQsImV4cCI6MjA4NDU5ODU5NH0.ltom27lQCmTyI-3NfPW6tMWpEMOL6fXh2dc8ksx0DsQ';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // Capas
         const layerDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
         const layerOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
         const layerSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
 
-        const map = L.map('map', { 
-            zoomControl: false, 
-            attributionControl: false,
-            layers: [layerDark] 
-        }).setView([-12.05, -77.15], 13);
-
-        // Regla (activada por código)
-        const rulerControl = L.control.polylineMeasure({ 
-            position: 'topleft', 
-            unit: 'nauticalmiles',
-            showBearings: true,
-            clearControlTitle: 'Limpiar'
-        }).addTo(map);
+        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [layerDark] }).setView([-12.05, -77.15], 13);
+        const rulerControl = L.control.polylineMeasure({ position: 'topleft', unit: 'nauticalmiles' }).addTo(map);
 
         const markers = {};
         let currentFocus = "all";
         let isRulerActive = false;
 
         function changeLayer(type) {
-            map.removeLayer(layerDark);
-            map.removeLayer(layerOSM);
-            map.removeLayer(layerSat);
-            
+            map.removeLayer(layerDark); map.removeLayer(layerOSM); map.removeLayer(layerSat);
             document.querySelectorAll('.tz-btn').forEach(b => b.classList.remove('active'));
-
             if(type === 'osm') { map.addLayer(layerOSM); document.getElementById('btn-osm').classList.add('active'); }
             else if(type === 'sat') { map.addLayer(layerSat); document.getElementById('btn-sat').classList.add('active'); }
             else { map.addLayer(layerDark); document.getElementById('btn-dark').classList.add('active'); }
@@ -128,13 +111,8 @@
 
         function toggleRuler() {
             isRulerActive = !isRulerActive;
-            const btn = document.getElementById('btn-ruler');
-            const internalBtn = document.querySelector('.polyline-measure-unicode-icon');
-            
-            if (internalBtn) internalBtn.click(); // Simula el click en el control oculto
-            
-            if (isRulerActive) btn.classList.add('active');
-            else btn.classList.remove('active');
+            document.querySelector('.polyline-measure-unicode-icon').click();
+            document.getElementById('btn-ruler').classList.toggle('active', isRulerActive);
         }
 
         function createIcon(color, rotation) {
@@ -156,21 +134,11 @@
             const color = (type === 'propio') ? '#ff3b30' : '#007aff';
             const heading = parseFloat(data.heading || data.cog || 0);
 
-            const popupHtml = `
-                <div style="background:#14191e; color:white; min-width:160px;">
-                    <b style="color:var(--tz-accent)">${name}</b>
-                    <table class="vessel-info-table">
-                        <tr><td>SOG:</td><td align="right">${data.velocidad || data.sog || 0} kn</td></tr>
-                        <tr><td>COG:</td><td align="right">${heading}°</td></tr>
-                        <tr><td>DATE:</td><td align="right">${new Date(data.date_event || data.last_seen).toLocaleTimeString()}</td></tr>
-                    </table>
-                </div>`;
-
             if (!markers[id]) {
-                markers[id] = L.marker([lat, lon], { icon: createIcon(color, heading) }).addTo(map);
+                markers[id] = L.marker([lat, lon], { icon: createIcon(color, heading) });
+                markers[id].vesselType = type;
                 markers[id].bindTooltip(name, { permanent: true, direction: 'top', className: 'ship-label', offset: [0, -10] });
-                markers[id].bindPopup(popupHtml);
-
+                
                 if (type === 'propio') {
                     const sel = document.getElementById('shipSelector');
                     if (![...sel.options].some(o => o.value == id)) sel.add(new Option(name, id));
@@ -178,23 +146,57 @@
             } else {
                 markers[id].setLatLng([lat, lon]);
                 markers[id].setIcon(createIcon(color, heading));
-                markers[id].getPopup().setContent(popupHtml);
             }
 
+            // --- LÓGICA DE VÍNCULO CON SOURCE_ID ---
+            // Guardamos quién reportó este AIS usando la columna source_id
+            if(type === 'ais') {
+                markers[id].sentBy = data.source_id; 
+            }
+
+            markers[id].bindPopup(`
+                <div style="background:#14191e; color:white; font-size:11px;">
+                    <b>${name}</b><br>
+                    SOG: ${data.sog || 0} kn | COG: ${heading}°<br>
+                    ${type === 'ais' ? `<small style="color:yellow">Vía: ${data.source_id}</small>` : ''}
+                </div>`);
+
+            applyVisibilityFilter(id);
             if (currentFocus === id) map.panTo([lat, lon]);
         }
 
-        async function sync() {
-            const { data: nmea } = await supabaseClient.from('nmea_logs').select('*').order('date_event', {ascending: false}).limit(20);
-            const { data: ais } = await supabaseClient.from('ais_live').select('*').order('last_seen', {ascending: false}).limit(100);
+        function applyVisibilityFilter(targetId) {
+            const marker = markers[targetId];
+            if (!marker) return;
 
+            if (currentFocus === "all") {
+                marker.addTo(map);
+            } else {
+                // El barco seleccionado es siempre visible
+                const isSelectedShip = (targetId === currentFocus);
+                // Si es AIS, solo se muestra si su source_id coincide con el barco seleccionado
+                const isAisFromSelected = (marker.vesselType === 'ais' && marker.sentBy === currentFocus);
+                // Otros barcos propios se mantienen visibles para contexto de flota
+                const isOtherPropio = (marker.vesselType === 'propio');
+
+                if (isSelectedShip || isAisFromSelected || isOtherPropio) {
+                    marker.addTo(map);
+                } else {
+                    map.removeLayer(marker);
+                }
+            }
+        }
+
+        async function sync() {
+            const { data: nmea } = await supabaseClient.from('nmea_logs').select('*').order('date_event', {ascending: false}).limit(50);
+            const { data: ais } = await supabaseClient.from('ais_live').select('*').order('last_seen', {ascending: false}).limit(200);
+            
             if (nmea) nmea.forEach(x => updateMarker(x, 'propio'));
             if (ais) ais.forEach(x => updateMarker(x, 'ais'));
             
-            document.getElementById('stats').innerText = `PROPIOS: ${nmea?.length || 0} | AIS: ${ais?.length || 0}`;
+            document.getElementById('stats').innerText = `FLOTA: ${nmea?.length || 0} | AIS TOTALES: ${ais?.length || 0}`;
         }
 
-        // Suscripción Realtime
         supabaseClient.channel('vts-realtime')
             .on('postgres_changes',{event:'*',schema:'public',table:'nmea_logs'}, p => updateMarker(p.new || p.old, 'propio'))
             .on('postgres_changes',{event:'*',schema:'public',table:'ais_live'}, p => updateMarker(p.new || p.old, 'ais'))
@@ -202,7 +204,12 @@
 
         document.getElementById('shipSelector').onchange = (e) => {
             currentFocus = e.target.value;
-            if (currentFocus !== "all" && markers[currentFocus]) map.flyTo(markers[currentFocus].getLatLng(), 15);
+            // Al cambiar el barco, re-evaluamos la visibilidad de todos los marcadores
+            Object.keys(markers).forEach(id => applyVisibilityFilter(id));
+            
+            if (currentFocus !== "all" && markers[currentFocus]) {
+                map.flyTo(markers[currentFocus].getLatLng(), 14);
+            }
         };
 
         sync();
