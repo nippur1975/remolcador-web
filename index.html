@@ -2,138 +2,210 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor TASA Pro - Datos Completos</title>
+    <title>VTS TASA - Professional Monitor</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        :root {
+            --tz-bg: #14191e;
+            --tz-accent: #00e5ff;
+            --tz-border: #34495e;
+            --tz-text: #ecf0f1;
+        }
+
+        body, html { margin: 0; padding: 0; height: 100%; background: #0b0e11; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #map { height: 100vh; width: 100vw; background: #001529; }
-        
+
+        /* Sidebar estilo TimeZero */
+        .tz-sidebar {
+            position: absolute; left: 15px; top: 15px; z-index: 1000;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+
+        .tz-btn {
+            width: 44px; height: 44px; background: var(--tz-bg);
+            border: 1px solid var(--tz-border); border-radius: 4px;
+            color: white; cursor: pointer; display: flex; align-items: center;
+            justify-content: center; font-weight: bold; font-size: 14px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s;
+            text-align: center; line-height: 1;
+        }
+
+        .tz-btn:hover { border-color: var(--tz-accent); background: #1c252e; }
+        .tz-btn.active { color: var(--tz-accent); border-color: var(--tz-accent); box-shadow: 0 0 8px var(--tz-accent); }
+
         .selector-panel {
             position: absolute; top: 15px; right: 15px; z-index: 1000;
-            background: white; padding: 15px; border-radius: 8px; width: 280px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            background: rgba(20, 25, 30, 0.95); padding: 15px; border-radius: 4px; 
+            width: 260px; border-top: 3px solid var(--tz-accent); color: var(--tz-text);
+            backdrop-filter: blur(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
 
-        /* Etiquetas rojas sobre los barcos */
         .ship-label {
-            background: none !important; border: none !important; box-shadow: none !important;
-            color: #d32f2f; font-weight: bold; font-size: 11px;
-            text-shadow: 1px 1px 1px #fff; white-space: nowrap;
+            background: none !important; border: none !important;
+            color: #ffffff; font-weight: bold; font-size: 10px;
+            text-shadow: 1px 1px 2px #000; text-transform: uppercase;
         }
 
-        .popup-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 5px; }
-        .popup-table td { border-bottom: 1px solid #eee; padding: 3px 0; }
-        .popup-table b { color: #004488; }
+        select {
+            width: 100%; background: #000; color: var(--tz-accent);
+            border: 1px solid var(--tz-border); padding: 8px;
+            margin: 10px 0; border-radius: 3px; font-weight: bold; cursor: pointer;
+        }
+
+        .vessel-info-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 5px; }
+        .vessel-info-table td { padding: 3px 0; border-bottom: 1px solid #2c3e50; }
+
+        /* Ocultar elementos nativos de Leaflet que no queremos */
+        .leaflet-control-zoom, .leaflet-control-layers, .polyline-measure-unicode-icon { display: none !important; }
     </style>
 </head>
 <body>
 
+    <div class="tz-sidebar">
+        <button class="tz-btn active" id="btn-dark" onclick="changeLayer('dark')">DRK</button>
+        <button class="tz-btn" id="btn-osm" onclick="changeLayer('osm')">STD</button>
+        <button class="tz-btn" id="btn-sat" onclick="changeLayer('sat')">SAT</button>
+        <div style="height: 10px; border-bottom: 1px solid var(--tz-border); margin-bottom: 5px;"></div>
+        <button class="tz-btn" onclick="map.zoomIn()">+</button>
+        <button class="tz-btn" onclick="map.zoomOut()">-</button>
+        <button class="tz-btn" id="btn-ruler" title="Regla de Medición" onclick="toggleRuler()">📏</button>
+    </div>
+
     <div class="selector-panel">
-        <label style="font-weight: bold; color: #004488;">SEGUIMIENTO EN VIVO</label>
-        <select id="shipSelector" style="width:100%; margin:10px 0; padding:8px; font-weight:bold; border: 2px solid #004488; border-radius:5px;">
-            <option value="all">-- Ver todos --</option>
+        <div style="font-weight: bold; font-size: 13px; letter-spacing: 1px; color: var(--tz-accent);">VTS MONITOR TASA</div>
+        <select id="shipSelector">
+            <option value="all">-- VISTA GENERAL --</option>
         </select>
-        <div id="debug" style="font-size:11px; color:#666; font-weight:bold;">Cargando objetivos...</div>
+        <div id="stats" style="font-size:10px; opacity: 0.8;">Iniciando radar...</div>
     </div>
 
     <div id="map"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://ppete2.github.io/Leaflet.PolylineMeasure/Leaflet.PolylineMeasure.js"></script>
 
     <script>
         const SUPABASE_URL = 'https://lnxziegzyilfnibmfrtz.supabase.co'; 
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxueHppZWd6eWlsZm5pYm1mcnR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwMjI1OTQsImV4cCI6MjA4NDU5ODU5NH0.ltom27lQCmTyI-3NfPW6tMWpEMOL6fXh2dc8ksx0DsQ';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        const map = L.map('map', { zoomControl: true }).setView([-11.96, -77.14], 14); 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        // Capas
+        const layerDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png');
+        const layerOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+        const layerSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
 
-        const markers = {}; 
+        const map = L.map('map', { 
+            zoomControl: false, 
+            attributionControl: false,
+            layers: [layerDark] 
+        }).setView([-12.05, -77.15], 13);
+
+        // Regla (activada por código)
+        const rulerControl = L.control.polylineMeasure({ 
+            position: 'topleft', 
+            unit: 'nauticalmiles',
+            showBearings: true,
+            clearControlTitle: 'Limpiar'
+        }).addTo(map);
+
+        const markers = {};
         let currentFocus = "all";
+        let isRulerActive = false;
+
+        function changeLayer(type) {
+            map.removeLayer(layerDark);
+            map.removeLayer(layerOSM);
+            map.removeLayer(layerSat);
+            
+            document.querySelectorAll('.tz-btn').forEach(b => b.classList.remove('active'));
+
+            if(type === 'osm') { map.addLayer(layerOSM); document.getElementById('btn-osm').classList.add('active'); }
+            else if(type === 'sat') { map.addLayer(layerSat); document.getElementById('btn-sat').classList.add('active'); }
+            else { map.addLayer(layerDark); document.getElementById('btn-dark').classList.add('active'); }
+        }
+
+        function toggleRuler() {
+            isRulerActive = !isRulerActive;
+            const btn = document.getElementById('btn-ruler');
+            const internalBtn = document.querySelector('.polyline-measure-unicode-icon');
+            
+            if (internalBtn) internalBtn.click(); // Simula el click en el control oculto
+            
+            if (isRulerActive) btn.classList.add('active');
+            else btn.classList.remove('active');
+        }
+
+        function createIcon(color, rotation) {
+            return L.divIcon({
+                className: 'ship-icon',
+                html: `<div style="transform: rotate(${rotation}deg); width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 16px solid ${color}; filter: drop-shadow(0 0 2px black);"></div>`,
+                iconSize: [16, 16], iconAnchor: [8, 8]
+            });
+        }
 
         function updateMarker(data, type) {
-            const lat = parseFloat(data.lat || data.latitude);
-            const lon = parseFloat(data.lon || data.longitude);
+            const id = data.mmsi || data.ship_id;
+            if (!id) return;
+
+            const lat = parseFloat(data.lat), lon = parseFloat(data.lon);
             if (isNaN(lat) || isNaN(lon)) return;
 
-            // --- LÓGICA DE PRIORIDAD DE NOMBRE ---
-            // 1. ship_name, 2. ship_id (remolcador), 3. mmsi, 4. "Desconocido"
-            const displayName = (data.ship_name || data.ship_id || data.mmsi || "S/N").toString().toUpperCase();
-            const id = data.mmsi || data.ship_id || data.id;
+            const name = (data.ship_name || data.ship_id || id).toString().toUpperCase();
+            const color = (type === 'propio') ? '#ff3b30' : '#007aff';
+            const heading = parseFloat(data.heading || data.cog || 0);
 
-            const color = (type === 'propio') ? '#ff3300' : '#0000ff';
-            const heading = parseFloat(data.cog || data.rumbo || 0);
-
-            // --- CONSTRUCCIÓN DEL POPUP (Todos los datos) ---
-            let details = `<div style="min-width:200px"><h3 style="margin:0; color:${color};">${displayName}</h3><table class="popup-table">`;
-            
-            // Añadir dinámicamente cada dato si existe en el objeto
-            Object.entries(data).forEach(([key, value]) => {
-                if(value !== null && value !== undefined && key !== 'geom') {
-                    details += `<tr><td><b>${key}:</b></td><td>${value}</td></tr>`;
-                }
-            });
-            details += `</table></div>`;
+            const popupHtml = `
+                <div style="background:#14191e; color:white; min-width:160px;">
+                    <b style="color:var(--tz-accent)">${name}</b>
+                    <table class="vessel-info-table">
+                        <tr><td>SOG:</td><td align="right">${data.velocidad || data.sog || 0} kn</td></tr>
+                        <tr><td>COG:</td><td align="right">${heading}°</td></tr>
+                        <tr><td>DATE:</td><td align="right">${new Date(data.date_event || data.last_seen).toLocaleTimeString()}</td></tr>
+                    </table>
+                </div>`;
 
             if (!markers[id]) {
-                const icon = L.divIcon({
-                    className: 'ship-icon',
-                    html: `<div style="transform: rotate(${heading}deg); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 18px solid ${color}; filter: drop-shadow(1px 1px 1px black);"></div>`,
-                    iconSize: [18, 18], iconAnchor: [9, 9]
-                });
-
-                markers[id] = L.marker([lat, lon], { icon: icon }).addTo(map);
-                
-                // Etiqueta permanente (Nombre o MMSI)
-                markers[id].bindTooltip(displayName, { permanent: true, direction: 'top', className: 'ship-label', offset: [0, -10] });
-                
-                // Cuadro de datos al hacer click
-                markers[id].bindPopup(details);
+                markers[id] = L.marker([lat, lon], { icon: createIcon(color, heading) }).addTo(map);
+                markers[id].bindTooltip(name, { permanent: true, direction: 'top', className: 'ship-label', offset: [0, -10] });
+                markers[id].bindPopup(popupHtml);
 
                 if (type === 'propio') {
-                    const opt = new Option(`🚢 ${displayName}`, id);
-                    document.getElementById('shipSelector').add(opt);
+                    const sel = document.getElementById('shipSelector');
+                    if (![...sel.options].some(o => o.value == id)) sel.add(new Option(name, id));
                 }
             } else {
                 markers[id].setLatLng([lat, lon]);
-                markers[id].getPopup().setContent(details);
-                markers[id].setTooltipContent(displayName);
-                
-                // Actualizar rotación del icono
-                markers[id].setIcon(L.divIcon({
-                    className: 'ship-icon',
-                    html: `<div style="transform: rotate(${heading}deg); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 18px solid ${color}; filter: drop-shadow(1px 1px 1px black);"></div>`,
-                    iconSize: [18, 18], iconAnchor: [9, 9]
-                }));
+                markers[id].setIcon(createIcon(color, heading));
+                markers[id].getPopup().setContent(popupHtml);
             }
 
-            if (currentFocus == id) map.panTo([lat, lon]);
+            if (currentFocus === id) map.panTo([lat, lon]);
         }
 
-        async function init() {
-            const { data: n } = await supabaseClient.from('nmea_logs').select('*').order('date_event', {ascending:false}).limit(10);
-            const { data: a } = await supabaseClient.from('ais_live').select('*').order('last_seen', {ascending:false}).limit(150);
+        async function sync() {
+            const { data: nmea } = await supabaseClient.from('nmea_logs').select('*').order('date_event', {ascending: false}).limit(20);
+            const { data: ais } = await supabaseClient.from('ais_live').select('*').order('last_seen', {ascending: false}).limit(100);
 
-            if (n) n.forEach(x => updateMarker(x, 'propio'));
-            if (a) a.forEach(x => updateMarker(x, 'ais'));
-
-            document.getElementById('debug').innerText = `Objetivos: ${Object.keys(markers).length} (Sync OK)`;
-
-            // Canales Realtime
-            supabaseClient.channel('vts').on('postgres_changes',{event:'INSERT',schema:'public',table:'nmea_logs'},p=>updateMarker(p.new,'propio')).subscribe();
-            supabaseClient.channel('ais').on('postgres_changes',{event:'INSERT',schema:'public',table:'ais_live'},p=>updateMarker(p.new,'ais')).subscribe();
+            if (nmea) nmea.forEach(x => updateMarker(x, 'propio'));
+            if (ais) ais.forEach(x => updateMarker(x, 'ais'));
+            
+            document.getElementById('stats').innerText = `PROPIOS: ${nmea?.length || 0} | AIS: ${ais?.length || 0}`;
         }
+
+        // Suscripción Realtime
+        supabaseClient.channel('vts-realtime')
+            .on('postgres_changes',{event:'*',schema:'public',table:'nmea_logs'}, p => updateMarker(p.new || p.old, 'propio'))
+            .on('postgres_changes',{event:'*',schema:'public',table:'ais_live'}, p => updateMarker(p.new || p.old, 'ais'))
+            .subscribe();
 
         document.getElementById('shipSelector').onchange = (e) => {
             currentFocus = e.target.value;
-            if(currentFocus !== "all" && markers[currentFocus]) {
-                map.flyTo(markers[currentFocus].getLatLng(), 16);
-            }
+            if (currentFocus !== "all" && markers[currentFocus]) map.flyTo(markers[currentFocus].getLatLng(), 15);
         };
 
-        init();
+        sync();
     </script>
 </body>
 </html>
